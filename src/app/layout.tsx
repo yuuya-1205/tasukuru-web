@@ -21,8 +21,10 @@ export default function RootLayout({
       <body className={inter.className}>
         <ul>
           <li>
-            <li><a href="/">ホーム</a></li>
-            <li><a href="/form">入力フォーム</a></li>
+            <Link href="/">ホーム</Link>
+          </li>
+          <li>
+            <Link href="/form">入力フォーム</Link>
           </li>
         </ul>
         {children}
