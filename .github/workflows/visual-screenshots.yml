@@ -82,11 +82,17 @@ jobs:
           destination_dir: pr-${{ github.event.pull_request.number }}
           keep_files: true
 
-      - name: Comment screenshots on pull request
-        uses: marocchino/sticky-pull-request-comment@v2
+      - name: Add screenshots to pull request description
+        uses: actions/github-script@v7
+        env:
+          BEFORE_IMAGE_URL: https://raw.githubusercontent.com/${{ github.repository }}/visual-diffs/pr-${{ github.event.pull_request.number }}/before.png?sha=${{ github.event.pull_request.base.sha }}
+          AFTER_IMAGE_URL: https://raw.githubusercontent.com/${{ github.repository }}/visual-diffs/pr-${{ github.event.pull_request.number }}/after.png?sha=${{ github.event.pull_request.head.sha }}
+          ACTIONS_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         with:
-          header: visual-screenshots
-          message: |
+          script: |
+            const startMarker = '<!-- visual-screenshots:start -->'
+            const endMarker = '<!-- visual-screenshots:end -->'
+            const screenshots = `${startMarker}
             ## Visual screenshots
 
             <table>
@@ -99,13 +105,41 @@ jobs:
               <tbody>
                 <tr>
                   <td>
-                    <img alt="Before screenshot" src="https://raw.githubusercontent.com/${{ github.repository }}/visual-diffs/pr-${{ github.event.pull_request.number }}/before.png?sha=${{ github.event.pull_request.base.sha }}" width="700">
+                    <img alt="Before screenshot" src="${process.env.BEFORE_IMAGE_URL}" width="700">
                   </td>
                   <td>
-                    <img alt="After screenshot" src="https://raw.githubusercontent.com/${{ github.repository }}/visual-diffs/pr-${{ github.event.pull_request.number }}/after.png?sha=${{ github.event.pull_request.head.sha }}" width="700">
+                    <img alt="After screenshot" src="${process.env.AFTER_IMAGE_URL}" width="700">
                   </td>
                 </tr>
               </tbody>
             </table>
 
-            [Download full-size screenshots](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            [Download full-size screenshots](${process.env.ACTIONS_RUN_URL})
+            ${endMarker}`
+
+            const pullRequest = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+            })
+            const currentBody = pullRequest.data.body ?? ''
+            const startIndex = currentBody.indexOf(startMarker)
+            const endIndex = currentBody.indexOf(endMarker)
+            let updatedBody
+
+            if (startIndex >= 0 && endIndex >= startIndex) {
+              updatedBody =
+                currentBody.slice(0, startIndex) +
+                screenshots +
+                currentBody.slice(endIndex + endMarker.length)
+            } else {
+              const separator = currentBody.length > 0 ? '\n\n' : ''
+              updatedBody = `${currentBody}${separator}${screenshots}`
+            }
+
+            await github.rest.pulls.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+              body: updatedBody,
+            })
