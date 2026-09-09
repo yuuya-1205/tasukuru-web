@@ -1,0 +1,145 @@
+name: PR Visual Screenshots
+
+on:
+  pull_request:
+    branches: [main, master]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: visual-screenshots-publisher
+  cancel-in-progress: false
+
+jobs:
+  screenshots:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout base revision
+        uses: actions/checkout@v4
+        with:
+          path: before
+          ref: ${{ github.event.pull_request.base.sha }}
+
+      - name: Checkout pull request revision
+        uses: actions/checkout@v4
+        with:
+          path: after
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            before/package-lock.json
+            after/package-lock.json
+
+      - name: Install base dependencies
+        run: npm ci --prefix before
+
+      - name: Install pull request dependencies
+        run: npm ci --prefix after
+
+      - name: Build base revision
+        run: npm run build --prefix before
+
+      - name: Build pull request revision
+        run: npm run build --prefix after
+
+      - name: Install Chromium
+        working-directory: after
+        run: npx playwright install --with-deps chromium
+
+      - name: Capture Before screenshot
+        run: >-
+          node after/.github/scripts/capture-screenshot.mjs
+          before visual-output/before.png 3100
+
+      - name: Capture After screenshot
+        run: >-
+          node after/.github/scripts/capture-screenshot.mjs
+          after visual-output/after.png 3101
+
+      - name: Upload screenshot artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-screenshots-pr-${{ github.event.pull_request.number }}
+          path: visual-output/
+          retention-days: 30
+
+      - name: Publish screenshots
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: visual-diffs
+          publish_dir: visual-output
+          destination_dir: pr-${{ github.event.pull_request.number }}
+          keep_files: true
+
+      - name: Add screenshots to pull request description
+        uses: actions/github-script@v7
+        env:
+          BEFORE_IMAGE_URL: https://raw.githubusercontent.com/${{ github.repository }}/visual-diffs/pr-${{ github.event.pull_request.number }}/before.png?sha=${{ github.event.pull_request.base.sha }}
+          AFTER_IMAGE_URL: https://raw.githubusercontent.com/${{ github.repository }}/visual-diffs/pr-${{ github.event.pull_request.number }}/after.png?sha=${{ github.event.pull_request.head.sha }}
+          ACTIONS_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        with:
+          script: |
+            const startMarker = '<!-- visual-screenshots:start -->'
+            const endMarker = '<!-- visual-screenshots:end -->'
+            const screenshots = `${startMarker}
+            ## Visual screenshots
+
+            <table>
+              <thead>
+                <tr>
+                  <th>Before</th>
+                  <th>After</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>
+                    <img alt="Before screenshot" src="${process.env.BEFORE_IMAGE_URL}" width="700">
+                  </td>
+                  <td>
+                    <img alt="After screenshot" src="${process.env.AFTER_IMAGE_URL}" width="700">
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+
+            [Download full-size screenshots](${process.env.ACTIONS_RUN_URL})
+            ${endMarker}`
+
+            const pullRequest = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+            })
+            const currentBody = pullRequest.data.body ?? ''
+            const startIndex = currentBody.indexOf(startMarker)
+            const endIndex = currentBody.indexOf(endMarker)
+            let updatedBody
+
+            if (startIndex >= 0 && endIndex >= startIndex) {
+              updatedBody =
+                currentBody.slice(0, startIndex) +
+                screenshots +
+                currentBody.slice(endIndex + endMarker.length)
+            } else {
+              const separator = currentBody.length > 0 ? '\n\n' : ''
+              updatedBody = `${currentBody}${separator}${screenshots}`
+            }
+
+            await github.rest.pulls.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+              body: updatedBody,
+            })
