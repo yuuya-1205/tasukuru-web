@@ -1,6 +1,10 @@
 import type { Metadata } from 'next'
+import Link from 'next/link'
+import { Inter } from 'next/font/google'
 import '../index.css'
 import '../App.css'
+
+const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
   title: 'Tasukuru',
@@ -14,7 +18,15 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ja">
-      <body>{children}</body>
+      <body className={inter.className}>
+        <ul>
+          <li>
+            <li><a href="/">ホーム</a></li>
+            <li><a href="/form">入力フォーム</a></li>
+          </li>
+        </ul>
+        {children}
+      </body>
     </html>
   )
 }
