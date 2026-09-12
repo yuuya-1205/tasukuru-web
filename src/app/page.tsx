@@ -12,6 +12,9 @@ export default function Home() {
     <p>
       <button>操作ボタン</button>
     </p>
+    <p>
+      <button>追加ボタン</button>
+    </p>
 
   </main>
 }
