@@ -13,6 +13,7 @@ test("最初のページにアクセスする", async ({ page }) => {
   await expect(page).toHaveTitle("最初のページ");
   // ページの見出しを確認する。
   await expect(page.getByRole("button", { name: "操作ボタン" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "追加ボタン" })).toBeVisible();
 });
 
 /// これをCIに組み込むってことはコマンドを
